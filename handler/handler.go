@@ -218,15 +218,6 @@ func (h *Handler) CheckSession(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-type TestListResponse struct {
-	ID                uint64        `json:"id"`
-	Name              string        `json:"name"`
-	Description       string        `json:"description"`
-	TimeLimit         time.Duration `json:"timeLimit"`
-	MaxScore          uint64        `json:"maxScore"`
-	NumberOfQuestions uint64        `json:"numberOfQuestions"`
-}
-
 func (h *Handler) TestById(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	testID, err := strconv.ParseUint(vars["test_id"], 10, 64)
@@ -236,21 +227,14 @@ func (h *Handler) TestById(w http.ResponseWriter, r *http.Request) {
 	}
 
 	test, ok := h.Store.TestById(testID)
-
-	result := TestListResponse{
-		ID:                testID,
-		Name:              test.Name,
-		Description:       test.Description,
-		TimeLimit:         test.TimeLimit,
-		MaxScore:          test.MaxScore,
-		NumberOfQuestions: uint64(len(test.Questions)),
-	}
-
 	if !ok {
 		apiutils.WriteJSON(w, http.StatusBadRequest, errorResponse{"test does not exist"})
 	}
 
-	apiutils.WriteJSON(w, http.StatusOK, result)
+	testWithoutQuestions := *test
+	testWithoutQuestions.Questions = nil
+
+	apiutils.WriteJSON(w, http.StatusOK, testWithoutQuestions)
 }
 
 func (h *Handler) StartAttempt(w http.ResponseWriter, r *http.Request) {
@@ -310,13 +294,13 @@ func (h *Handler) PostQuestionAnswer(w http.ResponseWriter, r *http.Request) {
 		apiutils.WriteJSON(w, http.StatusBadRequest, errorResponse{"invalid attempt_id"})
 	}
 
-	questionID, err := strconv.ParseUint(vars["question_id"], 10, 64)
+	questionPos, err := strconv.ParseUint(vars["question_position"], 10, 64)
 
 	if err != nil {
 		apiutils.WriteJSON(w, http.StatusBadRequest, errorResponse{"invalid question_id"})
 	}
 
-	answer, err := h.Store.CreateAnswer(attemptID, questionID, request.Text)
+	answer, err := h.Store.CreateAnswer(attemptID, questionPos, request.Text)
 
 	if err != nil {
 		apiutils.WriteJSON(w, http.StatusInternalServerError, errorResponse{err.Error()})

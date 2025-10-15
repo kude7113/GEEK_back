@@ -73,7 +73,7 @@ type Test struct {
 	Description    string        `json:"description"`
 	TimeLimit      time.Duration `json:"timeLimit"`
 	MaxScore       uint64        `json:"maxScore"`
-	Questions      []*Question   `json:"questions"`
+	Questions      []*Question   `json:"questions,omitempty"`
 	NumOfQuestions uint64        `json:"numOfQuestions"` // Количество вопросов, которые нужно выбрать для попытки
 }
 
@@ -168,7 +168,6 @@ func (s *Store) CreateAttempt(testID, userID uint64) (*Attempt, error) {
 	}
 
 	// Выбираем случайные вопросы
-	rand.Seed(time.Now().UnixNano()) // Инициализируем генератор случайных чисел
 	selectedQuestions := s.getRandomQuestions(test.Questions, test.NumOfQuestions)
 
 	// Создаем новую попытку
@@ -178,7 +177,7 @@ func (s *Store) CreateAttempt(testID, userID uint64) (*Attempt, error) {
 		TestID:    testID,
 		Status:    "started", // Статус попытки
 		Answers:   make([]*Answer, len(selectedQuestions)),
-		StartedAt: time.Now(),
+		StartedAt: time.Now().UTC(),
 	}
 
 	// Здесь можно добавить логику для создания ответов для выбранных вопросов
@@ -201,12 +200,15 @@ func (s *Store) CreateAttempt(testID, userID uint64) (*Attempt, error) {
 
 // Функция для получения случайных вопросов
 func (s *Store) getRandomQuestions(allQuestions []*Question, numOfQuestions uint64) []*Question {
-	rand.Shuffle(len(allQuestions), func(i, j int) {
+	source := rand.NewSource(time.Now().UnixNano())
+	r := rand.New(source)
+
+	r.Shuffle(len(allQuestions), func(i, j int) {
 		allQuestions[i], allQuestions[j] = allQuestions[j], allQuestions[i]
 	})
 
 	if numOfQuestions > uint64(len(allQuestions)) {
-		numOfQuestions = uint64(len(allQuestions)) // если вопросов меньше, чем требуется
+		numOfQuestions = uint64(len(allQuestions))
 	}
 
 	return allQuestions[:numOfQuestions]
@@ -334,7 +336,7 @@ func (s *Store) CheckDealine(attemptID uint64) error {
 	return nil
 }
 
-func (s *Store) CreateAnswer(attemptID uint64, questionID uint64, text string) (*Answer, error) {
+func (s *Store) CreateAnswer(attemptID uint64, questionPos uint64, text string) (*Answer, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -348,16 +350,14 @@ func (s *Store) CreateAnswer(attemptID uint64, questionID uint64, text string) (
 		return nil, errors.New("attempt not found")
 	}
 
-	answer := &Answer{
-		ID:         uint64(len(attempt.Answers)) + 1,
-		QuestionID: questionID,
-		Text:       text,
-		CreatedAt:  time.Now().UTC(),
+	if len(attempt.Answers) < int(questionPos-1) {
+		return nil, errors.New("question position out of range")
 	}
 
-	attempt.Answers = append(attempt.Answers, answer)
+	attempt.Answers[questionPos-1].Text = text
+	attempt.Answers[questionPos-1].CreatedAt = time.Now().UTC()
 
-	return answer, nil
+	return attempt.Answers[questionPos-1], nil
 }
 
 func (s *Store) SubmitAttempt(attemptID uint64) (*Attempt, error) {
