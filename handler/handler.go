@@ -341,3 +341,11 @@ func (h *Handler) SubmitAttempt(w http.ResponseWriter, r *http.Request) {
 
 	apiutils.WriteJSON(w, http.StatusOK, attempt)
 }
+
+func (h *Handler) SentMassage(w http.ResponseWriter, r *http.Request) {
+
+}
+
+func (h *Handler) NewDialoge(w http.ResponseWriter, r *http.Request) {
+
+}

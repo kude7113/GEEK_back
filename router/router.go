@@ -31,11 +31,18 @@ func NewRouter(s *store.Store) http.Handler {
 	protected.HandleFunc("/tests/{test_id}/attempts", h.StartAttempt).Methods("POST")
 
 	// attempts
-	protected.HandleFunc("/attempts/{attempt_id}/questions", h.GetAttemptQuestions).Methods("GET")
+	protected.HandleFunc("/attempts/{attempt_id}/question", h.GetAttemptQuestions).Methods("GET")
+	protected.HandleFunc("/attempts/{attempt_id}/question/{question_pozition}", h.GetAttemptQuestions).Methods("GET")
 	//protected.HandleFunc("/attempts/{attempt_id}/answers", h.ListAnswers).Methods("GET")
 	//protected.HandleFunc("/attempts/{attempt_id}/answers/{question_id}", h.GetQuestionAnswer).Methods("GET")
 	protected.HandleFunc("/attempts/{attempt_id}/answers/{question_id}", h.PostQuestionAnswer).Methods("POST")
 	protected.HandleFunc("/attempts/{attempt_id}/submit", h.SubmitAttempt).Methods("POST")
+
+	ai := protected.PathPrefix("/attempts/{attempt_id}/ai").Subrouter()
+
+	ai.HandleFunc("/start", h.NewDialoge).Methods("POST")
+
+	ai.HandleFunc("/{thread_id}/send", h.SentMassage).Methods("POST")
 
 	return mw.CORS(r)
 }
