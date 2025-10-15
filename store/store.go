@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"fmt"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -23,6 +24,7 @@ type Store struct {
 	tests        map[uint64]*Test
 	attempts     map[uint64]*Attempt
 	sessions     map[string]uint64
+	aiThreads    map[uint64]*AIThread
 	nextUserID   uint64
 }
 
@@ -30,6 +32,13 @@ type User struct {
 	ID        uint64    `json:"id"`
 	Email     string    `json:"email"`
 	Password  string    `json:"-"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type AIThread struct {
+	AttemptID uint64    `json:"attempt_id"`
+	ThreadID  string    `json:"thread_id"`
+	Status    string    `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -59,12 +68,13 @@ type Question struct {
 }
 
 type Test struct {
-	ID          uint64        `json:"id"`
-	Name        string        `json:"name"`
-	Description string        `json:"description"`
-	TimeLimit   time.Duration `json:"timeLimit"`
-	MaxScore    uint64        `json:"maxScore"`
-	Questions   []*Question   `json:"questions"`
+	ID             uint64        `json:"id"`
+	Name           string        `json:"name"`
+	Description    string        `json:"description"`
+	TimeLimit      time.Duration `json:"timeLimit"`
+	MaxScore       uint64        `json:"maxScore"`
+	Questions      []*Question   `json:"questions,omitempty"`
+	NumOfQuestions uint64        `json:"numOfQuestions"` // Количество вопросов, которые нужно выбрать для попытки
 }
 
 func (s *Store) InitFillStore() error {
@@ -105,6 +115,7 @@ func (s *Store) InitFillStore() error {
 				MaxScore: 10,
 			},
 		},
+		NumOfQuestions: 2,
 	}
 
 	s.tests[test.ID] = &test
@@ -119,6 +130,7 @@ func NewStore() *Store {
 		attempts:     make(map[uint64]*Attempt),
 		usersByEmail: make(map[string]uint64),
 		sessions:     make(map[string]uint64),
+		aiThreads:    make(map[uint64]*AIThread),
 		nextUserID:   1,
 	}
 }
@@ -149,23 +161,57 @@ func (s *Store) CreateUser(email, password string) (*User, error) {
 	return user, nil
 }
 
-func (s *Store) CreateAttempt(userId, testId uint64) (*Attempt, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (s *Store) CreateAttempt(testID, userID uint64) (*Attempt, error) {
+	test, exists := s.tests[testID]
+	if !exists {
+		return nil, fmt.Errorf("test not found")
+	}
 
+	// Выбираем случайные вопросы
+	selectedQuestions := s.getRandomQuestions(test.Questions, test.NumOfQuestions)
+
+	// Создаем новую попытку
 	attempt := &Attempt{
 		ID:        uint64(len(s.attempts)) + 1,
-		UserID:    userId,
-		TestID:    testId,
-		Status:    "started",
-		Answers:   []*Answer{},
-		Result:    0,
+		UserID:    userID,
+		TestID:    testID,
+		Status:    "started", // Статус попытки
+		Answers:   make([]*Answer, len(selectedQuestions)),
 		StartedAt: time.Now().UTC(),
 	}
 
+	// Здесь можно добавить логику для создания ответов для выбранных вопросов
+	for i, question := range selectedQuestions {
+		// Это можно заменить на логику создания ответа на вопрос
+		attempt.Answers[i] = &Answer{
+			ID:         question.ID,
+			QuestionID: question.ID,
+			Text:       "", // Ответ будет пустым до завершения попытки
+		}
+	}
+
+	s.mu.Lock()
 	s.attempts[attempt.ID] = attempt
+	s.nextUserID++
+	s.mu.Unlock()
 
 	return attempt, nil
+}
+
+// Функция для получения случайных вопросов
+func (s *Store) getRandomQuestions(allQuestions []*Question, numOfQuestions uint64) []*Question {
+	source := rand.NewSource(time.Now().UnixNano())
+	r := rand.New(source)
+
+	r.Shuffle(len(allQuestions), func(i, j int) {
+		allQuestions[i], allQuestions[j] = allQuestions[j], allQuestions[i]
+	})
+
+	if numOfQuestions > uint64(len(allQuestions)) {
+		numOfQuestions = uint64(len(allQuestions))
+	}
+
+	return allQuestions[:numOfQuestions]
 }
 
 func (s *Store) AuthenticateUser(email, password string) (*User, error) {
@@ -237,12 +283,33 @@ func (s *Store) GetAttemptQuestions(attemptId uint64) ([]*Question, error) {
 		return nil, errors.New("attempt not found")
 	}
 
-	test, ok := s.tests[attempt.TestID]
-	if !ok {
-		return nil, errors.New("test not found")
+	// Собираем вопросы из попытки
+	var questions []*Question
+	for _, answer := range attempt.Answers {
+		// Ищем вопрос по ID
+		question, ok := s.findQuestionByID(attempt.TestID, answer.QuestionID)
+		if !ok {
+			return nil, errors.New("question not found for answer")
+		}
+		questions = append(questions, question)
 	}
 
-	return test.Questions, nil
+	return questions, nil
+}
+
+func (s *Store) findQuestionByID(testID, questionID uint64) (*Question, bool) {
+	test, ok := s.tests[testID]
+	if !ok {
+		return nil, false
+	}
+
+	for _, question := range test.Questions {
+		if question.ID == questionID {
+			return question, true
+		}
+	}
+
+	return nil, false
 }
 
 func (s *Store) CheckDealine(attemptID uint64) error {
@@ -269,7 +336,7 @@ func (s *Store) CheckDealine(attemptID uint64) error {
 	return nil
 }
 
-func (s *Store) CreateAnswer(attemptID uint64, questionID uint64, text string) (*Answer, error) {
+func (s *Store) CreateAnswer(attemptID uint64, questionPos uint64, text string) (*Answer, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -283,16 +350,14 @@ func (s *Store) CreateAnswer(attemptID uint64, questionID uint64, text string) (
 		return nil, errors.New("attempt not found")
 	}
 
-	answer := &Answer{
-		ID:         uint64(len(attempt.Answers)) + 1,
-		QuestionID: questionID,
-		Text:       text,
-		CreatedAt:  time.Now().UTC(),
+	if len(attempt.Answers) < int(questionPos-1) {
+		return nil, errors.New("question position out of range")
 	}
 
-	attempt.Answers = append(attempt.Answers, answer)
+	attempt.Answers[questionPos-1].Text = text
+	attempt.Answers[questionPos-1].CreatedAt = time.Now().UTC()
 
-	return answer, nil
+	return attempt.Answers[questionPos-1], nil
 }
 
 func (s *Store) SubmitAttempt(attemptID uint64) (*Attempt, error) {
