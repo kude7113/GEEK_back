@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "GEEK_back/docs"
 	"GEEK_back/router"
 	"GEEK_back/store"
 	"errors"
@@ -13,6 +14,13 @@ const localhost = "localhost"
 const host = "0.0.0.0"
 const port = "8080"
 
+// @title GEEK API
+// @version 1.0
+// @description API for web-site GEEK
+// @BasePath /api
+// @securityDefinitions.apikey CookieAuth
+// @in header
+// @name Cookie
 func main() {
 	s := store.NewStore()
 
