@@ -218,6 +218,13 @@ func (h *Handler) CheckSession(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// TestById возвращает тест по ID
+// @Summary Get test by ID
+// @Description Retrieves a test by its ID
+// @Param test_id path int true "Test ID"
+// @Success 200 {object} store.Test
+// @Failure 400 {object} map[string]string
+// @Router /test/{test_id} [get]
 func (h *Handler) TestById(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	testID, err := strconv.ParseUint(vars["test_id"], 10, 64)
@@ -237,6 +244,14 @@ func (h *Handler) TestById(w http.ResponseWriter, r *http.Request) {
 	apiutils.WriteJSON(w, http.StatusOK, testWithoutQuestions)
 }
 
+// StartAttempt начинает попытку теста
+// @Summary Start test attempt
+// @Description Starts a new attempt for the given test
+// @Param test_id path int true "Test ID"
+// @Success 200 {object} store.Attempt
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /tests/{test_id}/attempt [post]
 func (h *Handler) StartAttempt(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	testID, err := strconv.ParseUint(vars["test_id"], 10, 64)
@@ -246,7 +261,6 @@ func (h *Handler) StartAttempt(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userId, ok := mw.GetUserID(r.Context())
-
 	if !ok {
 		apiutils.WriteJSON(w, http.StatusBadRequest, errorResponse{"invalid user_id"})
 	}
@@ -258,6 +272,14 @@ func (h *Handler) StartAttempt(w http.ResponseWriter, r *http.Request) {
 	apiutils.WriteJSON(w, http.StatusOK, userAttempt)
 }
 
+// GetAttemptQuestions получает вопросы для попытки
+// @Summary Get questions for test attempt
+// @Description Retrieves all questions for the specified attempt
+// @Param attempt_id path int true "Attempt ID"
+// @Success 200 {array} store.Question
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /attempt/{attempt_id}/question [get]
 func (h *Handler) GetAttemptQuestions(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	attemptID, err := strconv.ParseUint(vars["attempt_id"], 10, 64)
@@ -279,6 +301,16 @@ type PostAnswerRequest struct {
 	Text string `json:"text"`
 }
 
+// PostQuestionAnswer отправляет ответ на вопрос
+// @Summary Submit an answer for a question
+// @Description Submits the answer for a given question in the attempt
+// @Param attempt_id path int true "Attempt ID"
+// @Param question_position path int true "Question Position"
+// @Param text body PostAnswerRequest true "Answer text"
+// @Success 200 {object} store.Answer
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /attempt/{attempt_id}/question/{question_position}/submit [post]
 func (h *Handler) PostQuestionAnswer(w http.ResponseWriter, r *http.Request) {
 	var request PostAnswerRequest
 	err := json.NewDecoder(r.Body).Decode(&request)
@@ -309,6 +341,14 @@ func (h *Handler) PostQuestionAnswer(w http.ResponseWriter, r *http.Request) {
 	apiutils.WriteJSON(w, http.StatusOK, answer)
 }
 
+// SubmitAttempt завершает попытку
+// @Summary Submit the attempt and evaluate the result
+// @Description Submits the entire attempt and evaluates the score
+// @Param attempt_id path int true "Attempt ID"
+// @Success 200 {object} store.Attempt
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /attempt/{attempt_id}/submit [post]
 func (h *Handler) SubmitAttempt(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	attemptID, err := strconv.ParseUint(vars["attempt_id"], 10, 64)
