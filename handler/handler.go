@@ -2,6 +2,7 @@ package handler
 
 import (
 	"GEEK_back/apiutils"
+	"GEEK_back/client/openAI"
 	mw "GEEK_back/middleware"
 	"GEEK_back/store"
 	"encoding/json"
@@ -18,15 +19,19 @@ import (
 const sessionDuration = 24 * time.Hour
 
 type Handler struct {
-	Store *store.Store
+	Store  *store.Store
+	Openai *openai.Client
 }
 
 type errorResponse struct {
 	Error string `json:"error"`
 }
 
-func NewHandler(s *store.Store) *Handler {
-	return &Handler{Store: s}
+func NewHandler(s *store.Store, o *openai.Client) *Handler {
+	return &Handler{
+		Store:  s,
+		Openai: o,
+	}
 }
 
 // registerRequest - тело запроса регистрации пользователя
@@ -351,8 +356,8 @@ func (h *Handler) PostQuestionAnswer(w http.ResponseWriter, r *http.Request) {
 // @Router /attempt/{attempt_id}/submit [post]
 func (h *Handler) SubmitAttempt(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	attemptID, err := strconv.ParseUint(vars["attempt_id"], 10, 64)
 
+	attemptID, err := strconv.ParseUint(vars["attempt_id"], 10, 64)
 	if err != nil {
 		apiutils.WriteJSON(w, http.StatusBadRequest, errorResponse{"invalid attempt_id"})
 	}
@@ -367,9 +372,117 @@ func (h *Handler) SubmitAttempt(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) SentMassage(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
 
+	threadID := vars["thread_id"]
+	if threadID == "" {
+		apiutils.WriteJSON(w, http.StatusBadRequest, errorResponse{"thread_id is required"})
+		return
+	}
+
+	attemptID, err := strconv.ParseUint(vars["attempt_id"], 10, 64)
+	if err != nil {
+		apiutils.WriteJSON(w, http.StatusBadRequest, errorResponse{"invalid attempt_id"})
+		return
+	}
+
+	// Читаем тело запроса
+	var req struct {
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apiutils.WriteJSON(w, http.StatusBadRequest, errorResponse{"invalid request body"})
+		return
+	}
+
+	if req.Message == "" {
+		apiutils.WriteJSON(w, http.StatusBadRequest, errorResponse{"message cannot be empty"})
+		return
+	}
+
+	// Проверяем дедлайн попытки
+	if err := h.Store.CheckDeadline(attemptID); err != nil {
+		apiutils.WriteJSON(w, http.StatusBadRequest, errorResponse{err.Error()})
+		return
+	}
+
+	// Добавляем сообщение в тред
+	if err := h.Openai.AddMessage(r.Context(), threadID, req.Message); err != nil {
+		apiutils.WriteJSON(w, http.StatusInternalServerError, errorResponse{err.Error()})
+		return
+	}
+
+	// Запускаем ассистента
+	run, err := h.Openai.RunAssistant(r.Context(), threadID)
+	if err != nil {
+		apiutils.WriteJSON(w, http.StatusInternalServerError, errorResponse{err.Error()})
+		return
+	}
+
+	// Ждем завершения (максимум 30 секунд)
+	if err := h.Openai.WaitForCompletion(r.Context(), threadID, run.ID, 30*time.Second); err != nil {
+		apiutils.WriteJSON(w, http.StatusInternalServerError, errorResponse{err.Error()})
+		return
+	}
+
+	// Получаем последние сообщения
+	messages, err := h.Openai.GetMessages(r.Context(), threadID, 1)
+	if err != nil {
+		apiutils.WriteJSON(w, http.StatusInternalServerError, errorResponse{"failed to get response"})
+		return
+	}
+
+	if len(messages) == 0 {
+		apiutils.WriteJSON(w, http.StatusInternalServerError, errorResponse{"no response from assistant"})
+		return
+	}
+
+	// Извлекаем текст ответа
+	assistantMessage := messages[0]
+	var responseText string
+	if len(assistantMessage.Content) > 0 && assistantMessage.Content[0].Text != nil {
+		responseText = assistantMessage.Content[0].Text.Value
+	}
+
+	// Возвращаем ответ
+	apiutils.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"response": responseText,
+	})
 }
 
 func (h *Handler) NewDialoge(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
 
+	attemptID, err := strconv.ParseUint(vars["attempt_id"], 10, 64)
+	if err != nil {
+		apiutils.WriteJSON(w, http.StatusBadRequest, errorResponse{"invalid attempt_id"})
+		return
+	}
+
+	questionPos, err := strconv.ParseUint(vars["question_position"], 10, 64)
+	if err != nil {
+		apiutils.WriteJSON(w, http.StatusBadRequest, errorResponse{"invalid question_position"})
+		return
+	}
+
+	// Создаем thread в OpenAI
+	threadID, err := h.Openai.CreateThread(r.Context())
+	if err != nil {
+		apiutils.WriteJSON(w, http.StatusInternalServerError, errorResponse{err.Error()})
+		return
+	}
+
+	// Сохраняем в Store
+	thread, err := h.Store.CreateAIThread(attemptID, questionPos, threadID)
+	if err != nil {
+		apiutils.WriteJSON(w, http.StatusInternalServerError, errorResponse{err.Error()})
+		return
+	}
+
+	// Возвращаем успешный ответ
+	apiutils.WriteJSON(w, http.StatusCreated, map[string]interface{}{
+		"thread_id":  thread.ThreadID,
+		"attempt_id": thread.AttemptID,
+		"status":     thread.Status,
+	})
 }
