@@ -312,7 +312,7 @@ func (s *Store) findQuestionByID(testID, questionID uint64) (*Question, bool) {
 	return nil, false
 }
 
-func (s *Store) CheckDealine(attemptID uint64) error {
+func (s *Store) CheckDeadline(attemptID uint64) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -340,7 +340,7 @@ func (s *Store) CreateAnswer(attemptID uint64, questionPos uint64, text string) 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	err := s.CheckDealine(attemptID)
+	err := s.CheckDeadline(attemptID)
 	if err != nil {
 		return nil, err
 	}
@@ -364,7 +364,7 @@ func (s *Store) SubmitAttempt(attemptID uint64) (*Attempt, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	err := s.CheckDealine(attemptID)
+	err := s.CheckDeadline(attemptID)
 	if err != nil {
 		return nil, err
 	}
@@ -380,4 +380,41 @@ func (s *Store) SubmitAttempt(attemptID uint64) (*Attempt, error) {
 		return nil, errors.New("attempt not found")
 	}
 	return attempt, nil
+}
+
+func (s *Store) CreateAIThread(attemptID, questionPosition uint64, threadID string) (*AIThread, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Проверяем существование attempt
+	_, ok := s.attempts[attemptID]
+	if !ok {
+		return nil, errors.New("attempt not found")
+	}
+
+	// Проверяем, что question position валидна
+	attempt := s.attempts[attemptID]
+	if questionPosition > uint64(len(attempt.Answers)) || questionPosition == 0 {
+		return nil, errors.New("invalid question position")
+	}
+
+	// Создаем ключ для хранения (attemptID * 1000 + questionPosition)
+	// это простой способ создать уникальный ключ из двух чисел
+	key := attemptID*1000 + questionPosition
+
+	// Проверяем, что для этого вопроса еще нет диалога
+	if _, exists := s.aiThreads[key]; exists {
+		return nil, errors.New("thread already exists for this question")
+	}
+
+	thread := &AIThread{
+		AttemptID: attemptID,
+		ThreadID:  threadID,
+		Status:    "active",
+		CreatedAt: time.Now().UTC(),
+	}
+
+	s.aiThreads[key] = thread
+
+	return thread, nil
 }

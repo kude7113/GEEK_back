@@ -1,6 +1,7 @@
 package router
 
 import (
+	"GEEK_back/client/openAI"
 	"GEEK_back/handler"
 	mw "GEEK_back/middleware"
 	"GEEK_back/store"
@@ -9,8 +10,8 @@ import (
 	"net/http"
 )
 
-func NewRouter(s *store.Store) http.Handler {
-	h := handler.NewHandler(s)
+func NewRouter(s *store.Store, o *openai.Client) http.Handler {
+	h := handler.NewHandler(s, o)
 
 	r := mux.NewRouter()
 
