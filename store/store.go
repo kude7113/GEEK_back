@@ -46,6 +46,7 @@ type Answer struct {
 	ID         uint64    `json:"id"`
 	QuestionID uint64    `json:"question_id"`
 	Text       string    `json:"text"`
+	RightOrNot bool      `json:"right_or_no"`
 	CreatedAt  time.Time `json:"created_at"`
 }
 
@@ -61,10 +62,11 @@ type Attempt struct {
 }
 
 type Question struct {
-	ID       uint64 `json:"id"`
-	Name     string `json:"name"`
-	Text     string `json:"text"`
-	MaxScore uint64 `json:"maxScore"`
+	ID         uint64 `json:"id"`
+	Name       string `json:"name"`
+	Text       string `json:"text"`
+	TrueAnswer string `json:"answer"`
+	MaxScore   uint64 `json:"maxScore"`
 }
 
 type Test struct {
@@ -91,31 +93,35 @@ func (s *Store) InitFillStore() error {
 		MaxScore:    100,
 		Questions: []*Question{
 			{
-				ID:       1,
-				Name:     "question 1",
-				Text:     "text question 1",
-				MaxScore: 10,
+				ID: 1,
+				Text: `Посчитать точное количество гласных букв в гимне Российской федерации
+						за вычетом буквы 'о', ответ вывести по такой формуле
+						X (количество гласных букв) - Y (количество   букв 'о') = Z`,
+				TrueAnswer: "270",
+				MaxScore:   10,
 			},
 			{
-				ID:       2,
-				Name:     "question 2",
-				Text:     "text question 2",
-				MaxScore: 10,
+				ID: 2,
+				Text: `Определи что за источник, напиши точную дату публикации и время выхода новости:
+						'С января по сентябрь самая высокая доходность в рублях была у корпоративных облигаций.
+						 Но отдельно по итогам сентября на первое место по доходности вышел другой актив'`,
+				TrueAnswer: "РБК",
+				MaxScore:   10,
 			},
 			{
-				ID:       3,
-				Name:     "question 3",
-				Text:     "text question 3",
-				MaxScore: 10,
+				ID: 3,
+				Text: `Рассчитать  beta = Cov (Ra, Rp)/Var(Ra) для невозобновляемых ресурсов в монголии
+						 по 5 разным показателям на основе данных на 2025 год world bank group`,
+				TrueAnswer: "2334",
+				MaxScore:   10,
 			},
 			{
 				ID:       4,
-				Name:     "question 4",
-				Text:     "text question 4",
+				Text:     "text question",
 				MaxScore: 10,
 			},
 		},
-		NumOfQuestions: 2,
+		NumOfQuestions: 4,
 	}
 
 	s.tests[test.ID] = &test
@@ -350,8 +356,23 @@ func (s *Store) CreateAnswer(attemptID uint64, questionPos uint64, text string) 
 		return nil, errors.New("attempt not found")
 	}
 
+	test, ok := s.tests[attempt.TestID]
+	if !ok {
+		return nil, errors.New("test not found")
+	}
+
 	if len(attempt.Answers) < int(questionPos-1) {
 		return nil, errors.New("question position out of range")
+	}
+
+	question := test.Questions[questionPos-1]
+	trueAnswer := question.TrueAnswer
+
+	if text == trueAnswer {
+		attempt.Result += question.MaxScore
+		attempt.Answers[questionPos-1].RightOrNot = true
+	} else {
+		attempt.Answers[questionPos-1].RightOrNot = false
 	}
 
 	attempt.Answers[questionPos-1].Text = text
@@ -382,6 +403,15 @@ func (s *Store) SubmitAttempt(attemptID uint64) (*Attempt, error) {
 	return attempt, nil
 }
 
+func (s *Store) GetAttemptByID(attemptID uint64) (*Attempt, bool) {
+	attempt, ok := s.attempts[attemptID]
+	if !ok {
+		return nil, false
+	}
+
+	return attempt, true
+}
+
 func (s *Store) CreateAIThread(attemptID, questionPosition uint64, threadID string) (*AIThread, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -403,8 +433,10 @@ func (s *Store) CreateAIThread(attemptID, questionPosition uint64, threadID stri
 	key := attemptID*1000 + questionPosition
 
 	// Проверяем, что для этого вопроса еще нет диалога
-	if _, exists := s.aiThreads[key]; exists {
-		return nil, errors.New("thread already exists for this question")
+	if questionPosition != 1 {
+		if _, exists := s.aiThreads[key]; exists {
+			return nil, errors.New("thread already exists for this question")
+		}
 	}
 
 	thread := &AIThread{

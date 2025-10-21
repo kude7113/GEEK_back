@@ -2,16 +2,17 @@ package handler
 
 import (
 	"GEEK_back/apiutils"
-	"GEEK_back/client/openAI"
+	openai "GEEK_back/client/openAI"
 	mw "GEEK_back/middleware"
 	"GEEK_back/store"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/gorilla/mux"
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/gorilla/mux"
 
 	"github.com/rs/zerolog/log"
 )
@@ -148,6 +149,9 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		Value:    sessionID,
 		Expires:  expiration,
 		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteNoneMode,
+		Path:     "/",
 	}
 	http.SetCookie(w, session)
 
@@ -484,5 +488,29 @@ func (h *Handler) NewDialoge(w http.ResponseWriter, r *http.Request) {
 		"thread_id":  thread.ThreadID,
 		"attempt_id": thread.AttemptID,
 		"status":     thread.Status,
+	})
+}
+
+type Results struct {
+	Score   uint64          `json:"score"`
+	Answers []*store.Answer `json:"answers"`
+}
+
+func (h *Handler) GetAttemptResults(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+
+	attemptID, err := strconv.ParseUint(vars["attempt_id"], 10, 64)
+	if err != nil {
+		apiutils.WriteJSON(w, http.StatusBadRequest, errorResponse{"invalid attempt_id"})
+	}
+
+	attempt, ok := h.Store.GetAttemptByID(attemptID)
+	if !ok {
+		apiutils.WriteJSON(w, http.StatusBadRequest, errorResponse{"invalid attempt_id"})
+	}
+
+	apiutils.WriteJSON(w, http.StatusOK, Results{
+		Score:   attempt.Result,
+		Answers: attempt.Answers,
 	})
 }
