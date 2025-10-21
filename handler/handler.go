@@ -253,12 +253,18 @@ func (h *Handler) TestById(w http.ResponseWriter, r *http.Request) {
 	apiutils.WriteJSON(w, http.StatusOK, testWithoutQuestions)
 }
 
+type startAttemptRequest struct {
+	AccessCode string `json:"access_code"`
+}
+
 // StartAttempt начинает попытку теста
 // @Summary Start test attempt
-// @Description Starts a new attempt for the given test
+// @Description Starts a new attempt for the given test with access code validation
 // @Param test_id path int true "Test ID"
+// @Param access_code body startAttemptRequest true "Access code for the test"
 // @Success 200 {object} store.Attempt
 // @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Router /tests/{test_id}/attempt [post]
 func (h *Handler) StartAttempt(w http.ResponseWriter, r *http.Request) {
@@ -269,14 +275,36 @@ func (h *Handler) StartAttempt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Читаем access code из body
+	var request startAttemptRequest
+	err = json.NewDecoder(r.Body).Decode(&request)
+	if err != nil {
+		apiutils.WriteJSON(w, http.StatusBadRequest, errorResponse{"invalid json"})
+		return
+	}
+
+	if request.AccessCode == "" {
+		apiutils.WriteJSON(w, http.StatusBadRequest, errorResponse{"access code is required"})
+		return
+	}
+
+	// Валидируем код доступа
+	err = h.Store.ValidateAccessCode(request.AccessCode, testID)
+	if err != nil {
+		apiutils.WriteJSON(w, http.StatusForbidden, errorResponse{err.Error()})
+		return
+	}
+
 	userId, ok := mw.GetUserID(r.Context())
 	if !ok {
 		apiutils.WriteJSON(w, http.StatusBadRequest, errorResponse{"invalid user_id"})
+		return
 	}
 
 	userAttempt, err := h.Store.CreateAttempt(userId, testID)
 	if err != nil {
 		apiutils.WriteJSON(w, http.StatusInternalServerError, errorResponse{"internal server error"})
+		return
 	}
 	apiutils.WriteJSON(w, http.StatusOK, userAttempt)
 }

@@ -17,6 +17,15 @@ var (
 	ErrInvalidEmailOrPassword = errors.New("invalid email or password")
 )
 
+type AccessCode struct {
+	Code       string     `json:"code"`         // сам код доступа
+	TestID     uint64     `json:"test_id"`      // к какому тесту относится
+	MaxUses    *uint64    `json:"max_uses"`     // nil = бесконечный, число = ограничение
+	UsedCount  uint64     `json:"used_count"`   // сколько раз использован
+	ExpiresAt  *time.Time `json:"expires_at"`   // nil = не истекает
+	CreatedAt  time.Time  `json:"created_at"`
+}
+
 type Store struct {
 	mu           sync.RWMutex
 	users        map[uint64]*User
@@ -25,6 +34,7 @@ type Store struct {
 	attempts     map[uint64]*Attempt
 	sessions     map[string]uint64
 	aiThreads    map[uint64]*AIThread
+	accessCodes  map[string]*AccessCode // key = код доступа
 	nextUserID   uint64
 }
 
@@ -126,6 +136,12 @@ func (s *Store) InitFillStore() error {
 
 	s.tests[test.ID] = &test
 
+	// Создаем тестовый бесконечный код доступа для test 1
+	_, err = s.CreateAccessCode("TEST-2025-INFINITY", test.ID, nil, nil)
+	if err != nil {
+		return fmt.Errorf("init fill store: failed to create access code: %w", err)
+	}
+
 	return nil
 }
 
@@ -137,6 +153,7 @@ func NewStore() *Store {
 		usersByEmail: make(map[string]uint64),
 		sessions:     make(map[string]uint64),
 		aiThreads:    make(map[uint64]*AIThread),
+		accessCodes:  make(map[string]*AccessCode),
 		nextUserID:   1,
 	}
 }
@@ -449,4 +466,64 @@ func (s *Store) CreateAIThread(attemptID, questionPosition uint64, threadID stri
 	s.aiThreads[key] = thread
 
 	return thread, nil
+}
+
+// CreateAccessCode создает новый код доступа для теста
+func (s *Store) CreateAccessCode(code string, testID uint64, maxUses *uint64, expiresAt *time.Time) (*AccessCode, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Проверяем, что тест существует
+	if _, ok := s.tests[testID]; !ok {
+		return nil, errors.New("test not found")
+	}
+
+	// Проверяем, что код не существует
+	if _, ok := s.accessCodes[code]; ok {
+		return nil, errors.New("access code already exists")
+	}
+
+	accessCode := &AccessCode{
+		Code:      code,
+		TestID:    testID,
+		MaxUses:   maxUses,
+		UsedCount: 0,
+		ExpiresAt: expiresAt,
+		CreatedAt: time.Now().UTC(),
+	}
+
+	s.accessCodes[code] = accessCode
+
+	return accessCode, nil
+}
+
+// ValidateAccessCode проверяет код доступа и увеличивает счетчик использования
+func (s *Store) ValidateAccessCode(code string, testID uint64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	accessCode, ok := s.accessCodes[code]
+	if !ok {
+		return errors.New("invalid access code")
+	}
+
+	// Проверяем, что код для нужного теста
+	if accessCode.TestID != testID {
+		return errors.New("access code is not valid for this test")
+	}
+
+	// Проверяем срок действия
+	if accessCode.ExpiresAt != nil && time.Now().UTC().After(*accessCode.ExpiresAt) {
+		return errors.New("access code has expired")
+	}
+
+	// Проверяем лимит использований
+	if accessCode.MaxUses != nil && accessCode.UsedCount >= *accessCode.MaxUses {
+		return errors.New("access code usage limit reached")
+	}
+
+	// Увеличиваем счетчик использования
+	accessCode.UsedCount++
+
+	return nil
 }
