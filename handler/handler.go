@@ -149,8 +149,8 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		Value:    sessionID,
 		Expires:  expiration,
 		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteNoneMode,
+		Secure:   false, // false для работы по HTTP
+		SameSite: http.SameSiteLaxMode, // Lax для cross-origin по HTTP
 		Path:     "/",
 	}
 	http.SetCookie(w, session)
