@@ -542,3 +542,37 @@ func (h *Handler) GetAttemptResults(w http.ResponseWriter, r *http.Request) {
 		Answers: attempt.Answers,
 	})
 }
+
+// GetAttemptHistory возвращает историю завершенных попыток пользователя для теста
+// @Summary Get user's attempt history for a test
+// @Description Retrieves all completed attempts for the current user and specified test
+// @Tags attempts
+// @Produce json
+// @Param test_id path int true "Test ID"
+// @Success 200 {array} store.Attempt
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /tests/{test_id}/attempts/history [get]
+// @Security CookieAuth
+func (h *Handler) GetAttemptHistory(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	testID, err := strconv.ParseUint(vars["test_id"], 10, 64)
+	if err != nil {
+		apiutils.WriteJSON(w, http.StatusBadRequest, errorResponse{"invalid test_id"})
+		return
+	}
+
+	userID, ok := mw.GetUserID(r.Context())
+	if !ok {
+		apiutils.WriteJSON(w, http.StatusBadRequest, errorResponse{"invalid user_id"})
+		return
+	}
+
+	history, err := h.Store.GetUserAttemptHistory(userID, testID)
+	if err != nil {
+		apiutils.WriteJSON(w, http.StatusInternalServerError, errorResponse{err.Error()})
+		return
+	}
+
+	apiutils.WriteJSON(w, http.StatusOK, history)
+}

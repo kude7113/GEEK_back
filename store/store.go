@@ -527,3 +527,34 @@ func (s *Store) ValidateAccessCode(code string, testID uint64) error {
 
 	return nil
 }
+
+// GetUserAttemptHistory возвращает историю завершенных попыток пользователя для указанного теста
+func (s *Store) GetUserAttemptHistory(userID, testID uint64) ([]*Attempt, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// Проверяем, что тест существует
+	if _, ok := s.tests[testID]; !ok {
+		return nil, errors.New("test not found")
+	}
+
+	var history []*Attempt
+
+	// Проходим по всем попыткам и фильтруем по userID, testID и статусу
+	for _, attempt := range s.attempts {
+		if attempt.UserID == userID && attempt.TestID == testID && attempt.Status == "submitted" {
+			history = append(history, attempt)
+		}
+	}
+
+	// Сортируем от новых к старым (по времени завершения)
+	for i := 0; i < len(history); i++ {
+		for j := i + 1; j < len(history); j++ {
+			if history[i].FinishedAt.Before(history[j].FinishedAt) {
+				history[i], history[j] = history[j], history[i]
+			}
+		}
+	}
+
+	return history, nil
+}
