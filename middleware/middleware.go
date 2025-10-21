@@ -8,6 +8,8 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog/log"
 	"net/http"
+	"os"
+	"strings"
 )
 
 type ctxKey string
@@ -27,14 +29,36 @@ func GetUserID(ctx context.Context) (uint64, bool) {
 	return id, ok
 }
 
-var allowed = map[string]bool{
-	"http://localhost:8080": true,
-	"http://127.0.0.1:8080": true,
+// getAllowedOrigins возвращает карту разрешенных origins
+func getAllowedOrigins() map[string]bool {
+	// Базовые origins для разработки
+	allowed := map[string]bool{
+		"http://localhost:8080": true,
+		"http://127.0.0.1:8080": true,
+		"http://localhost:8030": true,
+		"http://127.0.0.1:8030": true,
+		"http://0.0.0.0:8030":   true,
+	}
+
+	// Добавляем origins из переменной окружения ALLOWED_ORIGINS
+	// Формат: http://example.com:8030,http://192.168.1.100:8030
+	if envOrigins := os.Getenv("ALLOWED_ORIGINS"); envOrigins != "" {
+		for _, origin := range strings.Split(envOrigins, ",") {
+			origin = strings.TrimSpace(origin)
+			if origin != "" {
+				allowed[origin] = true
+			}
+		}
+	}
+
+	return allowed
 }
 
 func CORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
+		allowed := getAllowedOrigins()
+
 		if allowed[origin] {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
