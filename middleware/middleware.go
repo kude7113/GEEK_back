@@ -39,6 +39,7 @@ func getAllowedOrigins() map[string]bool {
 		"http://127.0.0.1:8030":     true,
 		"http://0.0.0.0:8030":       true,
 		"http://192.168.1.126:3000": true,
+		"http://localhost:3000":     true,
 	}
 
 	// Добавляем origins из переменной окружения ALLOWED_ORIGINS
