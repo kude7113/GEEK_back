@@ -33,11 +33,12 @@ func GetUserID(ctx context.Context) (uint64, bool) {
 func getAllowedOrigins() map[string]bool {
 	// Базовые origins для разработки
 	allowed := map[string]bool{
-		"http://localhost:8080": true,
-		"http://127.0.0.1:8080": true,
-		"http://localhost:8030": true,
-		"http://127.0.0.1:8030": true,
-		"http://0.0.0.0:8030":   true,
+		"http://localhost:8080":     true,
+		"http://127.0.0.1:8080":     true,
+		"http://localhost:8030":     true,
+		"http://127.0.0.1:8030":     true,
+		"http://0.0.0.0:8030":       true,
+		"http://192.168.1.126:3000": true,
 	}
 
 	// Добавляем origins из переменной окружения ALLOWED_ORIGINS
