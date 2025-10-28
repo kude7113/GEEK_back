@@ -29,7 +29,6 @@ func NewRouter(s *store.Store, o *openai.Client) http.Handler {
 
 	// tests routes
 	//protected.HandleFunc("/test", h.ListTests).Methods("GET")  // закомментировано
-
 	protected.HandleFunc("/test/{test_id}", h.TestById).Methods("GET")
 	protected.HandleFunc("/tests/{test_id}/attempt", h.StartAttempt).Methods("POST")
 	protected.HandleFunc("/tests/{test_id}/attempts/history", h.GetAttemptHistory).Methods("GET")

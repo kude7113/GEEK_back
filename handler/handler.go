@@ -149,7 +149,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		Value:    sessionID,
 		Expires:  expiration,
 		HttpOnly: true,
-		Secure:   false, // false для работы по HTTP
+		Secure:   false,                // false для работы по HTTP
 		SameSite: http.SameSiteLaxMode, // Lax для cross-origin по HTTP
 		Path:     "/",
 	}
@@ -301,7 +301,7 @@ func (h *Handler) StartAttempt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userAttempt, err := h.Store.CreateAttempt(userId, testID)
+	userAttempt, err := h.Store.CreateAttempt(testID, userId)
 	if err != nil {
 		apiutils.WriteJSON(w, http.StatusInternalServerError, errorResponse{"internal server error"})
 		return
@@ -516,30 +516,6 @@ func (h *Handler) NewDialoge(w http.ResponseWriter, r *http.Request) {
 		"thread_id":  thread.ThreadID,
 		"attempt_id": thread.AttemptID,
 		"status":     thread.Status,
-	})
-}
-
-type Results struct {
-	Score   uint64          `json:"score"`
-	Answers []*store.Answer `json:"answers"`
-}
-
-func (h *Handler) GetAttemptResults(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-
-	attemptID, err := strconv.ParseUint(vars["attempt_id"], 10, 64)
-	if err != nil {
-		apiutils.WriteJSON(w, http.StatusBadRequest, errorResponse{"invalid attempt_id"})
-	}
-
-	attempt, ok := h.Store.GetAttemptByID(attemptID)
-	if !ok {
-		apiutils.WriteJSON(w, http.StatusBadRequest, errorResponse{"invalid attempt_id"})
-	}
-
-	apiutils.WriteJSON(w, http.StatusOK, Results{
-		Score:   attempt.Result,
-		Answers: attempt.Answers,
 	})
 }
 
