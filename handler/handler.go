@@ -94,6 +94,16 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sessionID := h.Store.CreateSession(user.ID)
+	expiration := time.Now().Add(sessionDuration)
+	session := &http.Cookie{
+		Name:     "session_id",
+		Value:    sessionID,
+		Expires:  expiration,
+		HttpOnly: true,
+	}
+	http.SetCookie(w, session)
+
 	apiutils.WriteJSON(w, http.StatusCreated, user)
 }
 
@@ -301,7 +311,7 @@ func (h *Handler) StartAttempt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userAttempt, err := h.Store.CreateAttempt(userId, testID)
+	userAttempt, err := h.Store.CreateAttempt(testID, userId)
 	if err != nil {
 		apiutils.WriteJSON(w, http.StatusInternalServerError, errorResponse{"internal server error"})
 		return
