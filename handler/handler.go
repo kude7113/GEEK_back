@@ -552,3 +552,27 @@ func (h *Handler) GetAttemptHistory(w http.ResponseWriter, r *http.Request) {
 
 	apiutils.WriteJSON(w, http.StatusOK, history)
 }
+
+type Results struct {
+	Score   uint64          `json:"score"`
+	Answers []*store.Answer `json:"answers"`
+}
+
+func (h *Handler) GetAttemptResults(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+
+	attemptID, err := strconv.ParseUint(vars["attempt_id"], 10, 64)
+	if err != nil {
+		apiutils.WriteJSON(w, http.StatusBadRequest, errorResponse{"invalid attempt_id"})
+	}
+
+	attempt, ok := h.Store.GetAttemptByID(attemptID)
+	if !ok {
+		apiutils.WriteJSON(w, http.StatusBadRequest, errorResponse{"invalid attempt_id"})
+	}
+
+	apiutils.WriteJSON(w, http.StatusOK, Results{
+		Score:   attempt.Result,
+		Answers: attempt.Answers,
+	})
+}
