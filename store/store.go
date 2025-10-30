@@ -150,7 +150,7 @@ func (s *Store) InitFillStore() error {
 				MaxScore:   10,
 			},
 		},
-		NumOfQuestions: 4,
+		NumOfQuestions: 7,
 	}
 
 	s.tests[test.ID] = &test
